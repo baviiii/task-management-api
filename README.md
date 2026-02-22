@@ -287,6 +287,14 @@ All errors return a consistent JSON structure:
 
 ## Production Readiness Improvements
 
+### Production & scaling
+
+I built this to be correct and maintainable first. The app is stateless and fully async, so you can run multiple instances behind a load balancer and they’ll behave the same. Pagination and the indexes we added are there so list endpoints don’t fall over as data grows—so the bones are there for scaling.
+
+For real high load I’d add a few things: tune the DB connection pool (size, overflow, recycle) so we don’t exhaust Postgres under concurrency; put something like Redis in front of the hot read paths (e.g. list tasks) and invalidate on write; and add rate limiting so one client can’t hammer the API. I didn’t add those in the first version because the brief was about a solid, working API—I’d introduce them when we have real traffic and metrics, rather than over-engineering up front.
+
+The items below are what I’d do before calling this production-ready: auth, rate limiting, observability, proper migrations, and optionally caching and pool tuning depending on load.
+
 The following enhancements would be recommended before deploying this API to a production environment:
 
 ### Authentication & Authorization

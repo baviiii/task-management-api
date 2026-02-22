@@ -293,6 +293,8 @@ I built this to be correct and maintainable first. The app is stateless and full
 
 For real high load I’d add a few things: tune the DB connection pool (size, overflow, recycle) so we don’t exhaust Postgres under concurrency; put something like Redis in front of the hot read paths (e.g. list tasks) and invalidate on write; and add rate limiting so one client can’t hammer the API. I didn’t add those in the first version because the brief was about a solid, working API—I’d introduce them when we have real traffic and metrics, rather than over-engineering up front.
 
+**Keeping it working and current.** I like to lean on dedicated automation so the service doesn’t drift after the first deploy. CI already acts as a guard—Ruff and pytest run on every push so we catch regressions and style issues before they land. I’d add dependency-update bots (Dependabot or Renovate) so we get PRs for security and minor bumps and stay on supported versions. Scheduled smoke tests or a small job that hits the critical paths every so often would give an early warning if something breaks in prod. The idea isn’t to have “AI” run everything—it’s to have clear, owned automation that keeps the codebase working and current, and optionally an AI-assisted layer for triaging failures or suggesting fixes when something does go wrong. That way the stack stays state of the art without manual chasing.
+
 The items below are what I’d do before calling this production-ready: auth, rate limiting, observability, proper migrations, and optionally caching and pool tuning depending on load.
 
 The following enhancements would be recommended before deploying this API to a production environment:

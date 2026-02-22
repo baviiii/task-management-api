@@ -166,6 +166,15 @@ pytest -v
 docker compose run --rm api pytest -v
 ```
 
+### CI (GitHub Actions)
+
+On every push and pull request to `main` or `master`, GitHub Actions runs:
+
+- **Lint** — Ruff checks `app/` and `tests/` for code style and common issues.
+- **Test** — Full pytest suite using SQLite (no PostgreSQL required in CI).
+
+Workflow file: [.github/workflows/ci.yml](.github/workflows/ci.yml).
+
 The test suite covers:
 - ✅ Successful task creation
 - ✅ Validation failures (missing fields, invalid priority, past dates)

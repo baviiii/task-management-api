@@ -146,6 +146,14 @@ The following indexes are applied for efficient filtering:
 - `ix_task_composite_filter` — composite index on `(is_deleted, completed, priority)` for the most common filter combination.
 - Unique index on `tags.name` — for fast tag lookups and deduplication.
 
+### Why I built it this way
+
+I chose the **join table** for tasks and tags because I wanted tag names stored once and filterable with plain SQL—no duplication, and easy to add more tag metadata later. **Soft delete** felt right for anything that might need audit or undo; I’d rather hide rows than lose them. For **PATCH**, I used Pydantic’s `exclude_unset=True` so only the fields sent in the body are updated; that keeps partial updates predictable and avoids overwriting with `null` by mistake.
+
+**Validation** lives in the Pydantic schemas (including a custom validator for “due_date not in the past”) so invalid input is rejected before we touch the database, and we always return the same error shape. **Tests** override the DB dependency to use SQLite by default, so the suite runs with zero setup, but I added `TEST_DATABASE_URL` so we can run the same tests against Postgres when needed.
+
+If I were to extend this further, I’d run **Alembic migrations** in deployment instead of `create_all` at startup, and add a **readiness check** that pings the database so orchestrators know the app is really ready.
+
 ---
 
 ## Running Tests

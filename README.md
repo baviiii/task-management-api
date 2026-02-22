@@ -1,0 +1,292 @@
+# Task Management API
+
+A robust Task Management API built with **FastAPI** and **PostgreSQL**, supporting advanced filtering, tagging, and deadlines.
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) & [Docker Compose](https://docs.docker.com/compose/install/)
+
+### Run with Docker (recommended)
+
+```bash
+git clone <repo-url>
+cd task-management-api
+docker compose up --build
+```
+
+The API will be available at **http://localhost:8000**.
+
+Interactive Swagger docs: **http://localhost:8000/docs**
+
+### Run locally (without Docker)
+
+```bash
+python -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+
+# Set the database URL (requires a running PostgreSQL instance)
+export DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/taskdb
+
+uvicorn app.main:app --reload
+```
+
+---
+
+## API Endpoints
+
+| Method   | Endpoint         | Description                          |
+|----------|------------------|--------------------------------------|
+| `GET`    | `/`              | Health check                         |
+| `POST`   | `/tasks`         | Create a new task                    |
+| `GET`    | `/tasks`         | List tasks (filter, paginate)        |
+| `GET`    | `/tasks/{id}`    | Get a single task                    |
+| `PATCH`  | `/tasks/{id}`    | Partially update a task              |
+| `DELETE` | `/tasks/{id}`    | Soft-delete a task                   |
+
+### POST /tasks
+
+**Request body:**
+
+```json
+{
+  "title": "Finish report",
+  "description": "Q4 financial report",
+  "priority": 4,
+  "due_date": "2026-03-15",
+  "tags": ["work", "urgent"]
+}
+```
+
+- `title` — Required, 1–200 characters.
+- `description` — Optional.
+- `priority` — Required, integer 1–5 (5 = highest).
+- `due_date` — Required, ISO format `YYYY-MM-DD`, must not be in the past.
+- `tags` — Optional list of strings.
+
+### GET /tasks
+
+**Query parameters:**
+
+| Param       | Type    | Description                                       |
+|-------------|---------|---------------------------------------------------|
+| `completed` | bool    | Filter by completion status                       |
+| `priority`  | int     | Filter by exact priority level (1–5)              |
+| `tags`      | string  | Comma-separated tag names (matches **any**)       |
+| `limit`     | int     | Page size (default 20, max 100)                   |
+| `offset`    | int     | Number of items to skip (default 0)               |
+
+**Example:** `GET /tasks?priority=5&tags=work,urgent&limit=10&offset=0`
+
+### PATCH /tasks/{id}
+
+Only fields included in the request body are modified. Omitted fields remain unchanged.
+
+```json
+{
+  "completed": true,
+  "tags": ["done"]
+}
+```
+
+### DELETE /tasks/{id}
+
+Returns `204 No Content` on success.
+
+---
+
+## Design Decisions
+
+### Database: PostgreSQL
+
+PostgreSQL is the preferred choice for production workloads. It provides robust indexing, ACID compliance, and excellent support for concurrent access. The app connects via `asyncpg` for fully async I/O.
+
+### Tagging: Join Table (many-to-many)
+
+The tagging system uses a **normalized join table** approach:
+
+- `tags` table — stores unique tag names.
+- `task_tags` association table — links tasks to tags.
+
+**Why not PostgreSQL ARRAY or JSONB?**
+
+| Approach    | Pros                              | Cons                                          |
+|-------------|-----------------------------------|-----------------------------------------------|
+| Join Table  | Normalized, indexable, no duplication, easy to query with JOINs | Slightly more complex queries |
+| ARRAY       | Simple schema, easy writes        | Hard to index for containment queries, duplication risk |
+| JSONB       | Flexible schema                   | Overkill for simple string tags, harder to enforce constraints |
+
+The join table approach was chosen because it:
+- Avoids tag name duplication across tasks.
+- Allows efficient filtering using standard SQL JOINs and `IN` clauses.
+- Scales well as the number of tags grows.
+- Makes it easy to extend tags with additional attributes (e.g., color, category) in the future.
+
+### Deletion: Soft Delete
+
+Tasks are **soft-deleted** by setting `is_deleted = True` and recording `deleted_at`. They are excluded from all list and get queries.
+
+**Justification:**
+- Preserves data for audit trails and analytics.
+- Allows easy "undo" functionality in the future.
+- No risk of accidental permanent data loss.
+- Minimal performance impact with proper indexing.
+
+### Indexing Strategy
+
+The following indexes are applied for efficient filtering:
+
+- `ix_task_priority` — on `priority` column.
+- `ix_task_completed` — on `completed` column.
+- `ix_task_is_deleted` — on `is_deleted` column.
+- `ix_task_composite_filter` — composite index on `(is_deleted, completed, priority)` for the most common filter combination.
+- Unique index on `tags.name` — for fast tag lookups and deduplication.
+
+---
+
+## Running Tests
+
+Tests use **SQLite** (via `aiosqlite`) as an in-memory/file-based database for speed and zero external dependencies.
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the test suite
+pytest -v
+```
+
+### With Docker
+
+```bash
+docker compose run --rm api pytest -v
+```
+
+The test suite covers:
+- ✅ Successful task creation
+- ✅ Validation failures (missing fields, invalid priority, past dates)
+- ✅ Filtering by priority, completion status, and tags
+- ✅ Pagination (limit/offset)
+- ✅ Partial updates (PATCH) — individual fields, tags, edge cases
+- ✅ Soft delete behavior
+- ✅ 404 handling for nonexistent/deleted tasks
+
+---
+
+## Project Structure
+
+```
+task-management-api/
+├── app/
+│   ├── __init__.py
+│   ├── main.py              # FastAPI app entry point
+│   ├── config.py             # Settings (pydantic-settings)
+│   ├── database.py           # Async SQLAlchemy engine & session
+│   ├── models.py             # ORM models (Task, Tag, task_tags)
+│   ├── schemas.py            # Pydantic request/response schemas
+│   ├── exceptions.py         # Custom exception handlers
+│   └── routers/
+│       ├── __init__.py
+│       └── tasks.py          # /tasks endpoints
+├── tests/
+│   ├── __init__.py
+│   ├── conftest.py           # Test fixtures & DB setup
+│   └── test_tasks.py         # Test suite
+├── alembic/                  # Database migrations
+│   ├── env.py
+│   ├── script.py.mako
+│   └── versions/
+├── alembic.ini
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+├── pytest.ini
+├── .env.example
+├── .gitignore
+└── README.md
+```
+
+---
+
+## Error Handling
+
+All errors return a consistent JSON structure:
+
+```json
+{
+  "error": "Validation Failed",
+  "details": {
+    "priority": "Must be between 1 and 5"
+  }
+}
+```
+
+- `422` — Validation errors (Pydantic).
+- `404` — Resource not found.
+- `500` — Internal server error.
+
+---
+
+## Production Readiness Improvements
+
+The following enhancements would be recommended before deploying this API to a production environment:
+
+### Authentication & Authorization
+- Add JWT-based authentication (e.g., `python-jose` + `passlib`).
+- Implement role-based access control (RBAC) so users can only manage their own tasks.
+- Add API key or OAuth2 support for third-party integrations.
+
+### Rate Limiting & Security
+- Add rate limiting middleware (e.g., `slowapi`) to prevent abuse.
+- Enable CORS with a strict allow-list of origins instead of open access.
+- Add request-size limits and input sanitization to mitigate injection attacks.
+- Use HTTPS termination via a reverse proxy (e.g., Nginx, Traefik).
+
+### Observability & Monitoring
+- Integrate structured logging (e.g., `structlog` or `python-json-logger`) with correlation IDs per request.
+- Add health check endpoints for readiness (`/health/ready`) and liveness (`/health/live`) probes.
+- Export metrics via Prometheus (`prometheus-fastapi-instrumentator`) for latency, error rates, and throughput.
+- Integrate distributed tracing (e.g., OpenTelemetry) for debugging across services.
+
+### Database & Data Layer
+- Run Alembic migrations as part of the deployment pipeline rather than auto-creating tables at startup.
+- Add connection pooling tuning (pool size, overflow, recycle) for production traffic.
+- Implement database read replicas for read-heavy workloads.
+- Add a periodic cleanup job to hard-delete soft-deleted tasks older than a retention window.
+- Consider partitioning the `tasks` table by `created_at` if the dataset grows very large.
+
+### Caching
+- Add Redis-backed caching for frequently accessed task listings.
+- Use cache invalidation on writes (POST/PATCH/DELETE).
+- Cache tag lookups to avoid repeated DB hits for the same tag names.
+
+### CI/CD & Testing
+- Add a CI pipeline (GitHub Actions / GitLab CI) that runs linting (`ruff`), type checking (`mypy`), and the full test suite on every push.
+- Add load/stress testing (e.g., `locust`) to validate performance under concurrent requests.
+- Introduce integration tests against a real PostgreSQL instance (via Docker-in-CI).
+- Add code coverage reporting with a minimum threshold gate.
+
+### API Versioning & Pagination
+- Version the API (`/api/v1/tasks`) to support future breaking changes without disrupting clients.
+- Consider cursor-based pagination for more consistent results under concurrent writes (offset-based can skip/duplicate rows).
+
+### Configuration & Secrets
+- Use a secrets manager (e.g., AWS Secrets Manager, HashiCorp Vault) instead of `.env` files.
+- Separate configuration per environment (dev, staging, production) using environment-specific `.env` files or config maps.
+
+---
+
+## Technologies
+
+- **Python 3.12**
+- **FastAPI** — async web framework
+- **SQLAlchemy 2.x** — async ORM
+- **PostgreSQL 16** — production database
+- **Alembic** — database migrations
+- **Pydantic v2** — data validation
+- **pytest + httpx** — async test suite
+- **Docker + Docker Compose** — containerization

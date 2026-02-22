@@ -1,3 +1,4 @@
+import os
 from typing import AsyncGenerator
 
 import pytest_asyncio
@@ -7,7 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.database import Base, get_db
 from app.main import app
 
-TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+# Use TEST_DATABASE_URL for Postgres (or any DB); otherwise SQLite for fast, zero-setup tests.
+TEST_DATABASE_URL = os.getenv(
+    "TEST_DATABASE_URL",
+    "sqlite+aiosqlite:///./test.db",
+)
 
 engine_test = create_async_engine(TEST_DATABASE_URL, echo=False)
 async_session_test = async_sessionmaker(engine_test, class_=AsyncSession, expire_on_commit=False)

@@ -150,21 +150,58 @@ The following indexes are applied for efficient filtering:
 
 ## Running Tests
 
-Tests use **SQLite** (via `aiosqlite`) as an in-memory/file-based database for speed and zero external dependencies.
+### Why SQLite by default?
+
+The test suite defaults to **SQLite** (via `aiosqlite`) so that:
+
+- **No extra setup** — You can run `pytest` without starting PostgreSQL. Great for CI (e.g. GitHub Actions) and for developers who don’t have Postgres running.
+- **Fast** — SQLite is quick to spin up and tear down; the same schema and app code run against it.
+
+The app is written for **PostgreSQL** in production; SQLite is only a convenience for tests. For this API (standard CRUD, dates, integers), behavior is the same in both. If you want to run tests against real Postgres (e.g. to catch dialect-specific issues), use the option below.
+
+### Default: run tests with SQLite
 
 ```bash
 # Install dependencies
 pip install -r requirements.txt
 
-# Run the test suite
+# Run the test suite (uses SQLite by default)
 pytest -v
 ```
+
+### Run tests against your own PostgreSQL
+
+Set `TEST_DATABASE_URL` to your Postgres URL. Use a **dedicated test database** (e.g. `taskdb_test`) so tests don’t touch real data.
+
+**Windows (PowerShell):**
+
+```powershell
+$env:TEST_DATABASE_URL = "postgresql+asyncpg://postgres:YOUR_PASSWORD@localhost:5432/taskdb_test"
+pytest -v
+```
+
+**Linux/macOS:**
+
+```bash
+export TEST_DATABASE_URL=postgresql+asyncpg://postgres:YOUR_PASSWORD@localhost:5432/taskdb_test
+pytest -v
+```
+
+Create the test database once (e.g. in `psql` or pgAdmin):
+
+```sql
+CREATE DATABASE taskdb_test;
+```
+
+Tests will create and drop tables in that DB for each run.
 
 ### With Docker
 
 ```bash
 docker compose run --rm api pytest -v
 ```
+
+To run tests against the Postgres container from the host, point `TEST_DATABASE_URL` at `localhost:5432` (with port exposed) and use a test DB name.
 
 ### CI (GitHub Actions)
 
